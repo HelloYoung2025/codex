@@ -232,6 +232,20 @@ def execute(args):
     agent_user = subject["agent_user"]
     users_created = []
     try:
+        shared_bundle = temp_root / "frozen-bundle"
+        shutil.copytree(bundle, shared_bundle)
+        for directory, _, filenames in os.walk(shared_bundle):
+            os.chmod(directory, 0o755)
+            for filename in filenames:
+                os.chmod(pathlib.Path(directory) / filename, 0o644)
+        shared_manifest = verify_manifest(shared_bundle)
+        record(
+            checks,
+            "shared_bundle_manifest_preserved",
+            shared_manifest == manifest,
+            sha256_file(shared_bundle / "manifest.json"),
+        )
+
         for user in (pack_user, agent_user):
             if run(["id", user]).returncode == 0:
                 raise RuntimeError(f"fresh runner unexpectedly already has {user}")
@@ -302,12 +316,17 @@ def execute(args):
         cases.append(("symlink_rejected", symlink_path))
 
         validator = [
-            "sudo", "-u", pack_user, "--", sys.executable, str(bundle / "witness_runner.py"),
-            "validate", "--bundle", str(bundle), "--proposal-dir", str(proposal_dir), "--state", str(state_path),
+            "sudo", "-u", pack_user, "--", sys.executable, str(shared_bundle / "witness_runner.py"),
+            "validate", "--bundle", str(shared_bundle), "--proposal-dir", str(proposal_dir), "--state", str(state_path),
         ]
         for check_name, proposal_path in cases:
             outcome = run(validator + ["--proposal", str(proposal_path)])
-            record(checks, check_name, outcome.returncode == REJECT_CODE and sha256_as(pack_user, state_path) == initial_hash, f"rc={outcome.returncode}")
+            record(
+                checks,
+                check_name,
+                outcome.returncode == REJECT_CODE and sha256_as(pack_user, state_path) == initial_hash,
+                f"rc={outcome.returncode} stderr={outcome.stderr.strip()}",
+            )
 
         valid_path = proposal_dir / "valid.json"
         write_proposal(valid_path, base_proposal, user=agent_user)
@@ -319,10 +338,15 @@ def execute(args):
             and committed_state.get("nonce_consumed") is True
             and committed_state.get("last_proposal_id") == base_proposal["proposal_id"]
         )
-        record(checks, "valid_proposal_committed_once", valid_commit, f"rc={outcome.returncode}")
+        record(checks, "valid_proposal_committed_once", valid_commit, f"rc={outcome.returncode} stderr={outcome.stderr.strip()}")
         committed_hash = sha256_as(pack_user, state_path)
         replay = run(validator + ["--proposal", str(valid_path)])
-        record(checks, "replay_rejected", replay.returncode == REJECT_CODE and sha256_as(pack_user, state_path) == committed_hash, f"rc={replay.returncode}")
+        record(
+            checks,
+            "replay_rejected",
+            replay.returncode == REJECT_CODE and sha256_as(pack_user, state_path) == committed_hash,
+            f"rc={replay.returncode} stderr={replay.stderr.strip()}",
+        )
 
         control_path = pack_dir / "pack-control.txt"
         control = sudo_as(pack_user, f"umask 077; printf pack-ok > '{control_path}'")
@@ -351,7 +375,7 @@ def execute(args):
 
         if args.mode == "tamper":
             tampered = temp_root / "tampered-bundle"
-            shutil.copytree(bundle, tampered)
+            shutil.copytree(shared_bundle, tampered)
             modified = strict_json_file(tampered / "subject.json")
             modified["challenge_nonce"] = "tampered-after-freeze"
             (tampered / "subject.json").write_bytes(canonical_bytes(modified) + b"\n")
