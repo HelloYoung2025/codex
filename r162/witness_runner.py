@@ -69,6 +69,28 @@ def sudo_as(user, script):
     return run(["sudo", "-u", user, "--", "sh", "-c", script])
 
 
+def read_text_as(user, path):
+    completed = run(["sudo", "-u", user, "--", "cat", str(path)])
+    if completed.returncode != 0:
+        raise RuntimeError(f"failed to read {path} as {user}: {completed.stderr.strip()}")
+    return completed.stdout
+
+
+def strict_json_as(user, path):
+    return strict_json_bytes(read_text_as(user, path).encode("utf-8"))
+
+
+def sha256_as(user, path):
+    completed = run(["sudo", "-u", user, "--", "sha256sum", str(path)])
+    if completed.returncode != 0:
+        raise RuntimeError(f"failed to hash {path} as {user}: {completed.stderr.strip()}")
+    return completed.stdout.split()[0]
+
+
+def exists_as(user, path):
+    return run(["sudo", "-u", user, "--", "test", "-e", str(path)]).returncode == 0
+
+
 def record(checks, name, passed, detail=None):
     checks.append({"name": name, "passed": bool(passed), "detail": detail or ""})
 
@@ -176,12 +198,22 @@ def execute(args):
         "GITHUB_RUN_ID": bool(os.environ.get("GITHUB_RUN_ID")),
         "GITHUB_JOB": bool(os.environ.get("GITHUB_JOB")),
         "GITHUB_SHA": bool(os.environ.get("GITHUB_SHA")),
+        "R162_EXPECTED_HEAD_SHA": bool(os.environ.get("R162_EXPECTED_HEAD_SHA")),
     }
     record(checks, "hosted_environment_claim_present", all(env_checks.values()), json.dumps(env_checks, sort_keys=True))
     if not all(env_checks.values()):
         raise RuntimeError("required GitHub Actions environment missing")
 
-    temp_root = pathlib.Path(tempfile.mkdtemp(prefix="r162-", dir=os.environ.get("RUNNER_TEMP")))
+    checkout_sha = run(["git", "rev-parse", "HEAD"], check=True).stdout.strip()
+    expected_head_sha = os.environ["R162_EXPECTED_HEAD_SHA"]
+    record(
+        checks,
+        "exact_head_checkout",
+        checkout_sha == expected_head_sha,
+        f"checkout={checkout_sha} expected={expected_head_sha} event={os.environ.get('GITHUB_SHA')}",
+    )
+
+    temp_root = pathlib.Path(tempfile.mkdtemp(prefix="r162-", dir="/tmp"))
     os.chmod(temp_root, 0o755)
     pack_user = subject["pack_user"]
     agent_user = subject["agent_user"]
@@ -210,9 +242,10 @@ def execute(args):
             "marker": None,
         }).decode("utf-8")
         create_state = f"umask 077; printf '%s\\n' '{initial_state}' > '{state_path}'"
-        if sudo_as(pack_user, create_state).returncode != 0:
-            raise RuntimeError("pack state initialization failed")
-        initial_hash = sha256_file(state_path)
+        state_init = sudo_as(pack_user, create_state)
+        if state_init.returncode != 0:
+            raise RuntimeError(f"pack state initialization failed: {state_init.stderr.strip()}")
+        initial_hash = sha256_as(pack_user, state_path)
 
         probes = [
             ("agent_read_denied", f"cat '{state_path}' >/dev/null"),
@@ -226,7 +259,7 @@ def execute(args):
             probes.reverse()
         for name, script in probes:
             outcome = sudo_as(agent_user, script)
-            record(checks, name, outcome.returncode != 0 and sha256_file(state_path) == initial_hash, f"rc={outcome.returncode}")
+            record(checks, name, outcome.returncode != 0 and sha256_as(pack_user, state_path) == initial_hash, f"rc={outcome.returncode}")
 
         base_proposal = {
             "proposal_id": "proposal-valid-001",
@@ -261,12 +294,12 @@ def execute(args):
         ]
         for check_name, proposal_path in cases:
             outcome = run(validator + ["--proposal", str(proposal_path)])
-            record(checks, check_name, outcome.returncode == REJECT_CODE and sha256_file(state_path) == initial_hash, f"rc={outcome.returncode}")
+            record(checks, check_name, outcome.returncode == REJECT_CODE and sha256_as(pack_user, state_path) == initial_hash, f"rc={outcome.returncode}")
 
         valid_path = proposal_dir / "valid.json"
         write_proposal(valid_path, base_proposal)
         outcome = run(validator + ["--proposal", str(valid_path)])
-        committed_state = strict_json_file(state_path)
+        committed_state = strict_json_as(pack_user, state_path)
         valid_commit = (
             outcome.returncode == 0
             and committed_state.get("version") == subject["expected_final_state_version"]
@@ -274,13 +307,13 @@ def execute(args):
             and committed_state.get("last_proposal_id") == base_proposal["proposal_id"]
         )
         record(checks, "valid_proposal_committed_once", valid_commit, f"rc={outcome.returncode}")
-        committed_hash = sha256_file(state_path)
+        committed_hash = sha256_as(pack_user, state_path)
         replay = run(validator + ["--proposal", str(valid_path)])
-        record(checks, "replay_rejected", replay.returncode == REJECT_CODE and sha256_file(state_path) == committed_hash, f"rc={replay.returncode}")
+        record(checks, "replay_rejected", replay.returncode == REJECT_CODE and sha256_as(pack_user, state_path) == committed_hash, f"rc={replay.returncode}")
 
         control_path = pack_dir / "pack-control.txt"
         control = sudo_as(pack_user, f"umask 077; printf pack-ok > '{control_path}'")
-        record(checks, "pack_positive_control", control.returncode == 0 and control_path.read_text(encoding="utf-8") == "pack-ok")
+        record(checks, "pack_positive_control", control.returncode == 0 and read_text_as(pack_user, control_path) == "pack-ok")
 
         fd_gap_path = pack_dir / "preopened-fd-gap.txt"
         sudo_as(pack_user, f"umask 077; printf before > '{fd_gap_path}'")
@@ -291,15 +324,15 @@ def execute(args):
             "os.write(fd,b'-after-drop'); os.fsync(fd); os.close(fd)"
         )
         fd_gap = run(["sudo", sys.executable, "-c", helper])
-        gap_observed = fd_gap.returncode == 0 and fd_gap_path.read_text(encoding="utf-8") == "before-after-drop"
+        gap_observed = fd_gap.returncode == 0 and read_text_as(pack_user, fd_gap_path) == "before-after-drop"
         record(checks, "inherited_fd_gap_observed", gap_observed, "observed_not_contained" if gap_observed else fd_gap.stderr)
 
-        final_state = strict_json_file(state_path)
+        final_state = strict_json_as(pack_user, state_path)
         postconditions = (
             final_state.get("version") == subject["expected_final_state_version"]
             and final_state.get("marker") == "hosted-witness-verified"
-            and not (pack_dir / "agent-created").exists()
-            and not (pack_dir / "moved.json").exists()
+            and not exists_as(pack_user, pack_dir / "agent-created")
+            and not exists_as(pack_user, pack_dir / "moved.json")
         )
         record(checks, "postconditions_hold", postconditions)
 
@@ -331,7 +364,9 @@ def execute(args):
             "run_id": os.environ.get("GITHUB_RUN_ID"),
             "run_attempt": os.environ.get("GITHUB_RUN_ATTEMPT"),
             "job": os.environ.get("GITHUB_JOB"),
-            "sha": os.environ.get("GITHUB_SHA"),
+            "event_sha": os.environ.get("GITHUB_SHA"),
+            "checkout_sha": checkout_sha,
+            "expected_head_sha": expected_head_sha,
             "ref": os.environ.get("GITHUB_REF"),
             "runner_name": os.environ.get("RUNNER_NAME"),
             "runner_os": os.environ.get("RUNNER_OS"),
@@ -368,7 +403,7 @@ def execute(args):
     finally:
         for user in reversed(users_created):
             run(["sudo", "userdel", user])
-        shutil.rmtree(temp_root, ignore_errors=True)
+        run(["sudo", "rm", "-rf", "--", str(temp_root)])
 
 
 def main():

@@ -32,8 +32,11 @@ jobs:
         uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
         with:
           persist-credentials: false
+          ref: ${{ github.event.pull_request.head.sha }}
       - name: Execute frozen UID authority witness
         shell: bash
+        env:
+          R162_EXPECTED_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
         run: |
           set -euo pipefail
           mkdir -p "evidence/${{ matrix.name }}"
