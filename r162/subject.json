@@ -1,0 +1,10 @@
+{
+  "schema_version": "r162-subject-v1",
+  "subject_candidate_id": "R157-cpython39-runtime-side-effect-audit-attestation-harness",
+  "subject_family": "R157/R158-runtime-assurance-composite",
+  "challenge_nonce": "r162-5d0a7d76d31f4bc48c9470fe9c84992c",
+  "initial_state_version": 1,
+  "expected_final_state_version": 2,
+  "pack_user": "packos162",
+  "agent_user": "agentos162"
+}
