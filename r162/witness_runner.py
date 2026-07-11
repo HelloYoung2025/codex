@@ -182,6 +182,7 @@ def execute(args):
         raise RuntimeError("required GitHub Actions environment missing")
 
     temp_root = pathlib.Path(tempfile.mkdtemp(prefix="r162-", dir=os.environ.get("RUNNER_TEMP")))
+    os.chmod(temp_root, 0o755)
     pack_user = subject["pack_user"]
     agent_user = subject["agent_user"]
     users_created = []

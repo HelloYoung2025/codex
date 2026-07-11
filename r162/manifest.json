@@ -6,7 +6,7 @@
     "policy.json": "1027f2b5fff977426057085e29e992bed1358743a73e520fe7f89f04d0b89ff2",
     "r162-hosted-witness.yml": "f6c9547dda25d0a58b49ed990ec8aeeeec5350c26f31e32050ab86a4fe882f0c",
     "subject.json": "5f7e5e7e88ab6175ae28c53d616c6717632f24c0959f5fb307073da0632f4a63",
-    "witness_runner.py": "7113111a430bdf19f96d5ca848dc6b84b18c96617aff759bde68651f1b03e9af"
+    "witness_runner.py": "01ab1f6a5b8c123e95fa93351cb1b53f275e66e3ca078f4deae6a64a4d4ea292"
   },
   "required_remote_paths": {
     "active_workflow": ".github/workflows/r162-hosted-witness.yml",
