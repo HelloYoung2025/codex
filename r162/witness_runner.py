@@ -58,8 +58,14 @@ def verify_manifest(bundle):
     return manifest
 
 
-def run(command, *, check=False):
-    completed = subprocess.run(command, text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+def run(command, *, check=False, input_text=None):
+    completed = subprocess.run(
+        command,
+        text=True,
+        input=input_text,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+    )
     if check and completed.returncode != 0:
         raise RuntimeError(f"command failed {command}: {completed.stderr}")
     return completed
@@ -171,17 +177,24 @@ def validate_proposal(args):
         return reject(str(exc))
 
 
-def write_proposal(path, value, *, duplicate=False):
+def write_proposal(path, value, *, duplicate=False, user=None):
     if duplicate:
         raw = (
             '{"proposal_id":"duplicate","proposal_id":"forged",'
             '"expected_state_version":1,"challenge_nonce":"x",'
             '"action":"commit_marker","value":"hosted-witness-verified"}\n'
         )
-        path.write_text(raw, encoding="utf-8")
     else:
-        path.write_bytes(canonical_bytes(value) + b"\n")
-    os.chmod(path, 0o644)
+        raw = (canonical_bytes(value) + b"\n").decode("utf-8")
+    if user is None:
+        path.write_text(raw, encoding="utf-8")
+        os.chmod(path, 0o644)
+        return
+    writer = (
+        "import os,pathlib,sys; "
+        "p=pathlib.Path(sys.argv[1]); p.write_text(sys.stdin.read(),encoding='utf-8'); os.chmod(p,0o644)"
+    )
+    run(["sudo", "-u", user, "--", sys.executable, "-c", writer, str(path)], check=True, input_text=raw)
 
 
 def execute(args):
@@ -276,16 +289,16 @@ def execute(args):
             ("wrong-nonce.json", wrong_nonce, "wrong_nonce_rejected"),
         ):
             path = proposal_dir / filename
-            write_proposal(path, value)
+            write_proposal(path, value, user=agent_user)
             cases.append((check_name, path))
         duplicate_path = proposal_dir / "duplicate.json"
-        write_proposal(duplicate_path, None, duplicate=True)
+        write_proposal(duplicate_path, None, duplicate=True, user=agent_user)
         cases.append(("duplicate_key_rejected", duplicate_path))
         outside_path = temp_root / "outside.json"
         write_proposal(outside_path, base_proposal)
         cases.append(("path_escape_rejected", outside_path))
         symlink_path = proposal_dir / "linked.json"
-        os.symlink(outside_path, symlink_path)
+        run(["sudo", "-u", agent_user, "--", "ln", "-s", str(outside_path), str(symlink_path)], check=True)
         cases.append(("symlink_rejected", symlink_path))
 
         validator = [
@@ -297,7 +310,7 @@ def execute(args):
             record(checks, check_name, outcome.returncode == REJECT_CODE and sha256_as(pack_user, state_path) == initial_hash, f"rc={outcome.returncode}")
 
         valid_path = proposal_dir / "valid.json"
-        write_proposal(valid_path, base_proposal)
+        write_proposal(valid_path, base_proposal, user=agent_user)
         outcome = run(validator + ["--proposal", str(valid_path)])
         committed_state = strict_json_as(pack_user, state_path)
         valid_commit = (
