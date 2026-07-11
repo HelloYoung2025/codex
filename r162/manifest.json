@@ -4,9 +4,9 @@
   "files": {
     "plan.json": "a90e2ba10c877446b7493130c710357214568e2a955d13c492ed1524a31f3d21",
     "policy.json": "1027f2b5fff977426057085e29e992bed1358743a73e520fe7f89f04d0b89ff2",
-    "r162-hosted-witness.yml": "ea832b12f07ca40c14c37c628b60074b94dc775c19f6fba100cca913c97e591b",
+    "r162-hosted-witness.yml": "7c43400a3ae56f3878f3bedc29c4e8ca0e1a3f0bd5c86b4108f7fd9615e02ff1",
     "subject.json": "5f7e5e7e88ab6175ae28c53d616c6717632f24c0959f5fb307073da0632f4a63",
-    "witness_runner.py": "4f366d8f19dcb878f1a3fa649546567facd0851f285c14451c197012d6fc190e"
+    "witness_runner.py": "6375c09746f693bb1d12ba2e06f03ea04f4e9fedb1a221d9a005646878d7dfbc"
   },
   "required_remote_paths": {
     "active_workflow": ".github/workflows/r162-hosted-witness.yml",

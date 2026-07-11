@@ -391,6 +391,7 @@ def execute(args):
             "subject_candidate_id": subject["subject_candidate_id"],
             "mode": args.mode,
             "blocking": bool(failed),
+            "checks": checks,
             "checks_passed": len(checks) - len(failed),
             "checks_total": len(checks),
             "failed_checks": failed,

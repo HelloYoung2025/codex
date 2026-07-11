@@ -38,16 +38,19 @@ jobs:
         env:
           R162_EXPECTED_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
         run: |
-          set -euo pipefail
+          set -uo pipefail
           mkdir -p "evidence/${{ matrix.name }}"
           python3 r162/witness_runner.py execute \
             --bundle r162 \
             --mode "${{ matrix.mode }}" \
             --output "evidence/${{ matrix.name }}/result.json"
+          witness_rc=$?
           cp r162/manifest.json r162/subject.json r162/policy.json r162/plan.json \
             "evidence/${{ matrix.name }}/"
           sha256sum "evidence/${{ matrix.name }}"/* > "evidence/${{ matrix.name }}/sha256sums.txt"
+          exit "$witness_rc"
       - name: Upload provider-hosted witness bundle
+        if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: r162-${{ matrix.name }}
