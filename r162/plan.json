@@ -1,0 +1,30 @@
+{
+  "schema_version": "r162-plan-v1",
+  "required_provider": "github-actions",
+  "required_runner_environment": "github-hosted",
+  "required_os": "Linux",
+  "jobs": [
+    "ubuntu22-forward",
+    "ubuntu24-reverse",
+    "ubuntu24-tamper"
+  ],
+  "required_checks": [
+    "distinct_uid",
+    "agent_read_denied",
+    "agent_create_denied",
+    "agent_truncate_denied",
+    "agent_replace_denied",
+    "agent_rename_denied",
+    "agent_child_denied",
+    "stale_version_rejected",
+    "wrong_nonce_rejected",
+    "symlink_rejected",
+    "path_escape_rejected",
+    "duplicate_key_rejected",
+    "valid_proposal_committed_once",
+    "replay_rejected",
+    "pack_positive_control",
+    "inherited_fd_gap_observed",
+    "postconditions_hold"
+  ]
+}
