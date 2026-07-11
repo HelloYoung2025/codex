@@ -1,0 +1,60 @@
+name: R162 Hosted UID Authority Witness
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/r162-hosted-witness.yml"
+      - "r162/**"
+
+permissions:
+  contents: read
+
+jobs:
+  hosted-witness:
+    name: ${{ matrix.name }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: ubuntu22-forward
+            os: ubuntu-22.04
+            mode: forward
+          - name: ubuntu24-reverse
+            os: ubuntu-24.04
+            mode: reverse
+          - name: ubuntu24-tamper
+            os: ubuntu-24.04
+            mode: tamper
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 10
+    steps:
+      - name: Checkout exact pull-request commit
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+        with:
+          persist-credentials: false
+          ref: ${{ github.event.pull_request.head.sha }}
+      - name: Execute frozen UID authority witness
+        shell: bash
+        env:
+          R162_EXPECTED_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -uo pipefail
+          mkdir -p "evidence/${{ matrix.name }}"
+          python3 r162/witness_runner.py execute \
+            --bundle r162 \
+            --mode "${{ matrix.mode }}" \
+            --output "evidence/${{ matrix.name }}/result.json"
+          witness_rc=$?
+          cp r162/manifest.json r162/subject.json r162/policy.json r162/plan.json \
+            "evidence/${{ matrix.name }}/"
+          sha256sum "evidence/${{ matrix.name }}"/* > "evidence/${{ matrix.name }}/sha256sums.txt"
+          exit "$witness_rc"
+      - name: Upload provider-hosted witness bundle
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: r162-${{ matrix.name }}
+          path: evidence/${{ matrix.name }}
+          if-no-files-found: error
+          retention-days: 1
+          compression-level: 0

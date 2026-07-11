@@ -1,0 +1,12 @@
+{
+  "schema_version": "r162-policy-v1",
+  "allowed_action": "commit_marker",
+  "allowed_value": "hosted-witness-verified",
+  "max_proposal_bytes": 2048,
+  "reject_symlink": true,
+  "reject_path_escape": true,
+  "reject_duplicate_keys": true,
+  "reject_replay": true,
+  "production_targets_allowed": false,
+  "secrets_allowed": false
+}
